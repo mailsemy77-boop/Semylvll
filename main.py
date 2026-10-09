@@ -11,7 +11,7 @@ BOTS_DIR        = 'bots'
 SHARED_LIBS     = 'shared_libs'
 MAIN_FILE_NAME  = 'main.py'       # aapki bot file ka naam
 
-MAX_ACTIVE      = 40              # ek time pe 40 bots
+MAX_ACTIVE      = 35              # ek time pe 40 bots
 TARGET_LEVEL    = 12              # level 12 pe replace
 CHECK_INTERVAL  = 20              # 20 sec pe check
 RESTART_DELAY   = 5               # crash ke baad 5 sec
