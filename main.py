@@ -1,4 +1,4 @@
-# main.py — AUTO BOT MANAGER (Clean Output Version)
+# main.py — AUTO BOT MANAGER (Only Level 12 Replace)
 import os, sys, json, shutil, subprocess, threading, time, re, signal
 from datetime import datetime
 
@@ -13,8 +13,6 @@ MAIN_FILE_NAME  = 'main.py'
 MAX_ACTIVE      = 40
 TARGET_LEVEL    = 12
 CHECK_INTERVAL  = 20
-RESTART_DELAY   = 5
-HANG_TIMEOUT    = 600
 
 os.makedirs(BOTS_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_BOT, exist_ok=True)
@@ -47,7 +45,6 @@ class BotInstance:
         self.stop_flag = False
         self.replaced = False
         self.last_level = 0
-        self.last_level_time = time.time()
 
     def setup_folder(self):
         if os.path.exists(self.folder):
@@ -65,21 +62,12 @@ class BotInstance:
         with open(os.path.join(self.folder, 'accounts.json'), 'w', encoding='utf-8') as f:
             json.dump([{'uid': self.uid, 'password': self.password}], f, indent=2, ensure_ascii=False)
 
-    def log(self, msg):
-        line = f"[{datetime.now().strftime('%I:%M:%S %p')}] {msg}"
-        try:
-            with open(self.log_file, 'a', encoding='utf-8') as f:
-                f.write(line + '\n'); f.flush()
-        except Exception: pass
-        print(f"[{self.uid}] {msg}")
-
     def start(self):
         self.setup_folder()
         open(self.log_file, 'w').close()
         self.stop_flag = False
         self.replaced = False
         self.last_level = 0
-        self.last_level_time = time.time()
 
         env = os.environ.copy()
         env['PYTHONIOENCODING'] = 'utf-8'
@@ -88,7 +76,6 @@ class BotInstance:
 
         main_py = os.path.join(self.folder, MAIN_FILE_NAME)
         if not os.path.exists(main_py):
-            self.log(f"❌ {MAIN_FILE_NAME} not found!")
             self.replaced = True
             return False
         try:
@@ -101,10 +88,9 @@ class BotInstance:
             threading.Thread(target=self._monitor, daemon=True).start()
             return True
         except Exception as e:
-            self.log(f"❌ Spawn failed: {e}")
             return False
 
-    # ---------- sirf [PROFILE] tak terminal pe print ----------
+    # ---------- sirf [PROFILE] tak terminal pe ----------
     def _stream_logs(self):
         try:
             with open(self.log_file, 'a', encoding='utf-8') as f:
@@ -114,11 +100,8 @@ class BotInstance:
                     if not line and self.proc.poll() is not None:
                         break
                     if line:
-                        # log file me poora save karo
                         f.write(f"[{datetime.now().strftime('%I:%M:%S %p')}] {line.rstrip()}\n")
                         f.flush()
-
-                        # terminal pe sirf [PROFILE] tak dikhao
                         if not profile_done:
                             print(f"[{self.uid}] {line.rstrip()}")
                             if '[PROFILE]' in line:
@@ -134,7 +117,7 @@ class BotInstance:
         try:
             with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
-            for line in lines[-50:]:
+            for line in lines[-100:]:
                 m = exp_re.search(line)
                 if m:
                     lvl = int(m.group(1))
@@ -142,40 +125,26 @@ class BotInstance:
         except Exception: pass
         return level
 
+    # ---------- SIRF LEVEL 12 CHECK ----------
     def _monitor(self):
         while not self.stop_flag:
             time.sleep(CHECK_INTERVAL)
+
             lvl = self.get_current_level()
             if lvl > self.last_level:
                 self.last_level = lvl
-                self.last_level_time = time.time()
+
+            # Level 12 pe replace
             if lvl >= TARGET_LEVEL:
-                self.log(f"🎯 Level {lvl} reached → replacing!")
+                print(f"[{self.uid}] 🎯 Level {lvl} reached → replacing!")
                 self.replaced = True
                 self.stop()
                 return
+
+            # Crash check (bas agar process mar jaye to band)
             if self.proc.poll() is not None:
-                self.log(f"💥 Process died (exit {self.proc.returncode})")
-                # 👇 crash pe poora error terminal pe
-                print("\n" + "="*70)
-                print(f"❌ BOT {self.uid} CRASHED")
-                print("-"*70)
-                try:
-                    with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                        for line in f.readlines()[-20:]:
-                            print(f"[{self.uid}] {line.rstrip()}")
-                except Exception: pass
-                print("="*70 + "\n")
-                if not self.stop_flag and not self.replaced:
-                    time.sleep(RESTART_DELAY)
-                    if not self.stop_flag: self.start()
-                return
-            if time.time() - self.last_level_time > HANG_TIMEOUT:
-                self.log(f"⏱ No level change → restart")
+                self.replaced = True
                 self.stop()
-                if not self.stop_flag:
-                    time.sleep(RESTART_DELAY)
-                    self.start()
                 return
 
     def stop(self):
@@ -242,14 +211,8 @@ class BotManager:
         print(f"[manager] 🚀 Launching up to {MAX_ACTIVE} bots...\n")
 
         for i in range(min(MAX_ACTIVE, len(self.all_accounts))):
-            acc = self.get_next_account()
-            if not acc: break
-            uid = str(acc['uid'])
-            bot = BotInstance(uid, acc['password'])
-            if bot.start():
-                self.active_bots[uid] = bot
-                # 👇 agla bot start karne se pehle thoda wait (PROFILE line aane do)
-                time.sleep(6)
+            if not self.spawn_new_bot(): break
+            time.sleep(6)
 
         print(f"\n[manager] ✅ Launched {len(self.active_bots)} bots.\n")
 
@@ -259,14 +222,14 @@ class BotManager:
                 with self.lock:
                     to_remove = []
                     for uid, bot in list(self.active_bots.items()):
-                        if bot.replaced or (not bot.is_alive() and bot.stop_flag):
+                        if bot.replaced:
+                            print(f"[manager] 🔄 {uid} replaced")
                             to_remove.append(uid)
                     for uid in to_remove:
                         self.active_bots.pop(uid, None)
                     while len(self.active_bots) < MAX_ACTIVE:
                         if not self.spawn_new_bot(): break
-                        time.sleep(6)   # PROFILE line ka wait
-                    print(f"[manager] 📊 Active: {len(self.active_bots)}/{MAX_ACTIVE} | Used: {self.account_index}/{len(self.all_accounts)}")
+                        time.sleep(6)
         except KeyboardInterrupt:
             print("\n[manager] 🛑 Shutting down...")
             for bot in self.active_bots.values(): bot.stop()
